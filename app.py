@@ -48,7 +48,7 @@ def login():
                 {
                     "name": user["name"],
                     "email": user["email"],
-                    "role": user["role"],
+                    "admin": user["admin"],
                     "access_token": create_access_token(identity=user["email"])
                 }
             ), 200
