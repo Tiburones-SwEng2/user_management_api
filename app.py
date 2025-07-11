@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 from flask_pymongo import PyMongo
+from flasgger import Swagger
 from pymongo.errors import DuplicateKeyError
 import bcrypt
 from flask_jwt_extended import create_access_token, JWTManager
@@ -11,6 +12,7 @@ from dotenv import load_dotenv
 app = Flask(__name__)
 app.config["MONGO_URI"] = "mongodb://localhost:27017/user_management"
 mongo = PyMongo(app)
+swagger = Swagger(app) 
 
 mongo.db.users.create_index("email", unique=True)
 app.config["JWT_SECRET_KEY"] = "lkhjap8gy2p 03kt"
@@ -32,10 +34,39 @@ mail = Mail(app)
 
 @app.route('/register', methods=['POST'])
 def register():
+    """
+    Registra al usuario en el sistema
+    ---
+    parameters:
+        - in: body
+          name: user_information
+          schema:
+            type: object
+            required:
+                - name
+                - email
+                - password
+            properties:
+                name:
+                    type: string
+                    example: Diego
+                email:
+                    type: string
+                    example: prueba1@example.com
+                password:
+                    type: string
+                    example: "12345678"
+    
+    responses:
+        200:
+            description: No hay informacion suficiente
+        400:
+            description: Este email ya esta registrado o el usuario ya esa registrado
+    """
     data = request.get_json()
     
-    if data["name"] == None or data["email"] == None or data["password"] == None or data["role"] == None:
-        return jsonify({"message": "Not enough information"}), 400
+    if data["name"] == None or data["email"] == None or data["password"] == None:
+        return jsonify({"mensaje": "No hay informacion suficiente"}), 400
 
     try:
         mongo.db.users.insert_one(
@@ -47,19 +78,46 @@ def register():
             }
         )
     except DuplicateKeyError:
-        return jsonify({"message": "This email is already registered"}), 400
+        return jsonify({"mensaje": "Este email ya esta registrado"}), 400
 
-    return jsonify({"message": "User registered"}), 200
+    return jsonify({"mensaje": "Usuario registrado"}), 200
 
 
 @app.route('/login', methods=['POST'])
 def login():
+    """
+    Permite que el usuario inicie sesion dentro del sistema
+    ---
+    parameters:
+        - in: body
+          name: user_login_information
+          schema:
+            type: object
+            required:
+                - email
+                - password
+            properties:
+                email:
+                    type: string
+                    example: prueba1@example.com
+                password:
+                    type: string
+                    example: "12345678"
+    
+    responses:
+        200:
+            description: login realizado correctamente
+        400:
+            description: Contraseña incorrecta
+        404:
+            description: El usuario no existe
+    """
     data = request.get_json()
 
     user = mongo.db.users.find_one({"email": data["email"]})
 
     if user == None:
-        return ({"message": "User does not exist"}), 404
+        return ({"mensaje": "El usuario no existe"}), 404
 
     if bcrypt.checkpw(data["password"].encode('utf-8'), user["password"]):
          return jsonify(
@@ -71,16 +129,39 @@ def login():
                 }
             ), 200
     else:    
-        return jsonify({"message": "Incorrect password"}), 400
+        return jsonify({"mensaje": "Contraseña incorrecta"}), 400
 
 @app.route('/recover', methods=['POST'])
 def recover():
+    """
+    Permite que el usuario pueda generar una nueva contraseña en caso de que haya olvidado la original
+    ---
+    parameters:
+        - in: body
+          name: user_login_information
+          schema:
+            type: object
+            required:
+                - email
+            properties:
+                email:
+                    type: string
+                    example: prueba1@example.com
+    
+    responses:
+        200:
+            description: Constraseña entregada correctamente
+        400:
+            description: No se pudo enviar la contraseña
+        404:
+            description: El usuario no existe
+    """
     data = request.get_json()
 
     user = mongo.db.users.find_one({"email": data["email"]})
 
     if user == None:
-        return ({"message": "User does not exist"}), 404
+        return ({"mensaje": "El usuario no existe"}), 404
 
     new_pwd = PasswordGenerator().generate()
 
@@ -97,7 +178,7 @@ def recover():
     try:
         mail.send(msg)
     except:
-        return {"error": "No se pudo realizar el envio de la nueva contraseña"}, 400
+        return {"error": "No se pudo enviar la nueva contraseña"}, 400
 
     return {"mensaje": "La nueva contraseña fue entregada"}, 200
     
