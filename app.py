@@ -8,11 +8,45 @@ from password_generator import PasswordGenerator
 from flask_mail import Mail, Message
 import os
 from dotenv import load_dotenv
+from prometheus_client import Counter, Histogram, generate_latest
+import time
+from functools import wraps
 
 app = Flask(__name__)
 app.config["MONGO_URI"] = "mongodb://localhost:27017/user_management"
 mongo = PyMongo(app)
 swagger = Swagger(app) 
+
+# MÉTRICAS
+REQUEST_COUNT = Counter('user_management_http_requests_total', 'Total Requests', ['method', 'endpoint'])
+REQUEST_LATENCY = Histogram('user_management_http_request_duration_seconds', 'Request Latency', ['endpoint'])
+ERROR_COUNT = Counter('user_management_http_request_errors_total', 'Total Errors', ['endpoint'])
+
+def monitor_metrics(f):
+    """Decorador para monitorear métricas de Prometheus"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        start_time = time.time()
+        endpoint = request.endpoint or 'unknown'
+        method = request.method
+        
+        # Incrementar contador de requests
+        REQUEST_COUNT.labels(method=method, endpoint=endpoint).inc()
+        
+        try:
+            # Ejecutar la función
+            response = f(*args, **kwargs)
+            return response
+        except Exception as e:
+            # Incrementar contador de errores
+            ERROR_COUNT.labels(endpoint=endpoint).inc()
+            raise
+        finally:
+            # Medir latencia
+            duration = time.time() - start_time
+            REQUEST_LATENCY.labels(endpoint=endpoint).observe(duration)
+    
+    return decorated_function
 
 mongo.db.users.create_index("email", unique=True)
 app.config["JWT_SECRET_KEY"] = "lkhjap8gy2p 03kt"
@@ -33,6 +67,7 @@ app.config.update(
 mail = Mail(app)
 
 @app.route('/register', methods=['POST'])
+@monitor_metrics
 def register():
     """
     Registra al usuario en el sistema
@@ -84,6 +119,7 @@ def register():
 
 
 @app.route('/login', methods=['POST'])
+@monitor_metrics
 def login():
     """
     Permite que el usuario inicie sesion dentro del sistema
@@ -132,6 +168,7 @@ def login():
         return jsonify({"mensaje": "Contraseña incorrecta"}), 400
 
 @app.route('/recover', methods=['POST'])
+@monitor_metrics
 def recover():
     """
     Permite que el usuario pueda generar una nueva contraseña en caso de que haya olvidado la original
@@ -181,6 +218,24 @@ def recover():
         return {"error": "No se pudo enviar la nueva contraseña"}, 400
 
     return {"mensaje": "La nueva contraseña fue entregada"}, 200
-    
+
+@app.route("/metrics", methods=["GET"])
+def metrics():
+    """
+    Endpoint para exponer métricas de Prometheus
+    ---
+    tags:
+      - Métricas
+    responses:
+      200:
+        description: Métricas de Prometheus
+        content:
+          text/plain:
+            schema:
+              type: string
+    """
+    return generate_latest(), 200, {'Content-Type': 'text/plain; charset=utf-8'}
+
+# ...existing code...
 if __name__ == "__main__":
     app.run(debug=True, port=5002)
