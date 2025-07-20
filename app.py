@@ -7,12 +7,14 @@ from flask_jwt_extended import create_access_token, JWTManager
 from password_generator import PasswordGenerator
 from flask_mail import Mail, Message
 import os
+from flask_cors import CORS
 from dotenv import load_dotenv
 from prometheus_client import Counter, Histogram, generate_latest
 import time
 from functools import wraps
 
 app = Flask(__name__)
+CORS(app, supports_credentials=True, origins=["http://localhost:5173"])
 app.config["MONGO_URI"] = "mongodb://localhost:27017/user_management"
 mongo = PyMongo(app)
 swagger = Swagger(app) 
